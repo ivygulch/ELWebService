@@ -15,7 +15,7 @@ import Foundation
  via the `state` property.
 */
 @objc public final class ServiceTask: NSObject {
-    public typealias ResponseProcessingHandler = (NSData?, NSURLResponse?) -> ServiceTaskResult
+    public typealias ResponseProcessingHandler = (NSData?, NSURLResponse?) throws -> ServiceTaskResult
     
     /// A closure type alias for a success handler.
     public typealias UpdateUIHandler = (Any?) -> Void
@@ -146,6 +146,18 @@ extension ServiceTask {
         request.parameterEncoding = encoding
         return self
     }
+    
+    /// Sets the key/value pairs that will be encoded as the query in the URL.
+    public func setQueryParameters(parameters: [String: AnyObject]) -> Self {
+        request.queryParameters = parameters
+        return self
+    }
+    
+    /// Sets the key/value pairs that are encoded as form data in the request body.
+    public func setFormParameters(parameters: [String: AnyObject]) -> Self {
+        request.formParameters = parameters
+        return self
+    }
 }
 
 // MARK: - NSURLSesssionDataTask
@@ -190,6 +202,9 @@ extension ServiceTask {
 // MARK: - Response API
 
 extension ServiceTask {
+    /// A closure type alias for a result transformation handler.
+    public typealias ResultTransformer = (Any?) throws -> ServiceTaskResult
+
     /**
      Add a response handler to be called on background thread after a successful
      response has been received.
@@ -206,12 +221,43 @@ extension ServiceTask {
                 }
             }
             
-            self.taskResult = handler(self.responseData, self.urlResponse)
+            do {
+                self.taskResult = try handler(self.responseData, self.urlResponse)
+            } catch let error {
+                self.taskResult = .Failure(error)
+            }
         }
 
         return self
     }
     
+    /**
+     Add a response handler to transform a (non-error) result produced by an earlier
+     response handler.
+
+     The handler can return any type of service task result, `.Empty`, `.Value` or
+     `.Failure`. The result is propagated to later response handlers.
+
+     - parameter handler: Transformation handler to execute.
+     - returns: Self instance to support chaining.
+     */
+    public func transform(handler: ResultTransformer) -> Self {
+        handlerQueue.addOperationWithBlock {
+            guard let taskResult = self.taskResult else {
+                return
+            }
+            
+            do {
+                let resultValue = try taskResult.value()
+                self.taskResult = try handler(resultValue)
+            } catch let error {
+                self.taskResult = .Failure(error)
+            }
+        }
+        
+        return self
+    }
+
     /**
      Add a handler that runs on the main thread and is responsible for updating 
      the UI with a given value. The handler is only called if a previous response 
@@ -225,22 +271,20 @@ extension ServiceTask {
     */
     public func updateUI(handler: UpdateUIHandler) -> Self {
         handlerQueue.addOperationWithBlock {
-            if let taskResult = self.taskResult {
-                switch taskResult {
-                case .Value(let value):
-                    dispatch_async(dispatch_get_main_queue()) {
-                        self.passthroughDelegate?.updateUIBegin(self.urlResponse)
-                        handler(value)
-                        self.passthroughDelegate?.updateUIEnd(self.urlResponse)
-                    }
-                case .Empty:
-                    dispatch_async(dispatch_get_main_queue()) {
-                        self.passthroughDelegate?.updateUIBegin(self.urlResponse)
-                        handler(nil)
-                        self.passthroughDelegate?.updateUIEnd(self.urlResponse)
-                    }
-                case .Failure(_): break
+            guard let taskResult = self.taskResult else {
+                return
+            }
+            
+            do {
+                let value = try taskResult.value()
+                
+                dispatch_sync(dispatch_get_main_queue()) {
+                    self.passthroughDelegate?.updateUIBegin(self.urlResponse)
+                    handler(value)
+                    self.passthroughDelegate?.updateUIEnd(self.urlResponse)
                 }
+            } catch _ {
+                return
             }
         }
         
@@ -252,7 +296,7 @@ extension ServiceTask {
 
 extension ServiceTask {
     /// A closure type alias for handling the response as JSON.
-    public typealias JSONHandler = (AnyObject, NSURLResponse?) -> ServiceTaskResult
+    public typealias JSONHandler = (AnyObject, NSURLResponse?) throws -> ServiceTaskResult
     
     /**
      Add a response handler to serialize the response body as a JSON object. The
@@ -264,15 +308,11 @@ extension ServiceTask {
     public func responseJSON(handler: JSONHandler) -> Self {
         return response { data, response in
             guard let data = data else {
-                return .Failure(ServiceTaskError.JSONSerializationFailedNilResponseBody)
+                throw ServiceTaskError.JSONSerializationFailedNilResponseBody
             }
             
-            do {
-                let json = try NSJSONSerialization.JSONObjectWithData(data, options: NSJSONReadingOptions.AllowFragments)
-                return handler(json, response)
-            } catch let error {
-                return .Failure(error)
-            }
+            let json = try NSJSONSerialization.JSONObjectWithData(data, options: NSJSONReadingOptions.AllowFragments)
+            return try handler(json, response)
         }
     }
 }
@@ -280,6 +320,9 @@ extension ServiceTask {
 // MARK: - Error Handling
 
 extension ServiceTask {
+    /// A closure type alias for an error-recovery handler.
+    public typealias ErrorRecoveryHandler = (ErrorType) throws -> ServiceTaskResult
+
     /**
     Add a response handler to be called if a request results in an error.
     
@@ -311,11 +354,44 @@ extension ServiceTask {
             if let taskResult = self.taskResult {
                 switch taskResult {
                 case .Failure(let error):
-                    dispatch_async(dispatch_get_main_queue()) {
+                    dispatch_sync(dispatch_get_main_queue()) {
                         handler(error)
                     }
                 case .Empty, .Value(_): break
                 }
+            }
+        }
+        
+        return self
+    }
+
+    /**
+     Add a response handler to recover from an error produced by an earlier response
+     handler.
+     
+     The handler can return either a `.Value` or `.Empty`, indicating it was able to
+     recover from the error, or an `.Failure`, indicating that it was not able to
+     recover. The result is propagated to later response handlers.
+     
+     - parameter handler: Recovery handler to execute when an error occurs.
+     - returns: Self instance to support chaining.
+    */
+    public func recover(handler: ErrorRecoveryHandler) -> Self {
+        handlerQueue.addOperationWithBlock {
+            guard let taskResult = self.taskResult else {
+                return
+            }
+
+            switch taskResult {
+            case .Failure(let error):
+                do {
+                    self.taskResult = try handler(error)
+                } catch let error {
+                    self.taskResult = .Failure(error)
+                }
+
+            case .Empty, .Value(_):
+                return // bail out; do not run this handler
             }
         }
         
