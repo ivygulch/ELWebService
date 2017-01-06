@@ -161,7 +161,7 @@ open class MockSession: Session {
 /// A MockableSession that records all of the requests that are sent during its lifetime.
 open class RequestRecordingSession: MockSession {
     /// The requests that were sent during the lifetime of the session.
-    open fileprivate(set) var recordedRequests = [URLRequestEncodable]()
+    open private(set) var recordedRequests = [URLRequestEncodable]()
     
     open override func requestSent(_ request: URLRequestEncodable) {
         recordedRequests.append(request)
@@ -172,7 +172,7 @@ open class RequestRecordingSession: MockSession {
 
 /// A concrete implementation of DataTask for mocking purposes.
 public final class MockDataTask: DataTask {
-    fileprivate(set) public var state = URLSessionTask.State.suspended
+    private(set) public var state = URLSessionTask.State.suspended
     
     public init() {
         

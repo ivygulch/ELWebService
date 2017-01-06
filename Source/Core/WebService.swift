@@ -17,7 +17,7 @@ import Foundation
     public let baseURLString: String
     
     public var session: Session = URLSession.shared
-    internal fileprivate(set) weak var passthroughDelegate: ServicePassthroughDelegate?
+    internal private(set) weak var passthroughDelegate: ServicePassthroughDelegate?
     
     // MARK: Initialization
     

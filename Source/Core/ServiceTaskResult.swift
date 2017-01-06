@@ -44,10 +44,10 @@ extension ServiceTaskResult {
 /// Represents the result of a Obj-C response handler
 @objc public final class ObjCHandlerResult: NSObject {
     /// The resulting value
-    fileprivate(set) var value: AnyObject?
+    private(set) var value: AnyObject?
     
     /// The resulting error
-    fileprivate(set) var error: NSError?
+    private(set) var error: NSError?
     
     public class func resultWithValue(_ value: AnyObject) -> ObjCHandlerResult {
         return ObjCHandlerResult(value: value)
@@ -58,12 +58,12 @@ extension ServiceTaskResult {
     }
     
     /// Initialize a result with a value
-    fileprivate init(value: AnyObject) {
+    private init(value: AnyObject) {
         self.value = value
     }
     
     /// Initialize a result with an error
-    fileprivate init(error: NSError) {
+    private init(error: NSError) {
         self.error = error
     }
 }

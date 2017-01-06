@@ -32,20 +32,20 @@ import Foundation
         return .suspended
     }
     
-    fileprivate var request: Request
+    private var request: Request
     
-    fileprivate var urlRequest: URLRequest {
+    private var urlRequest: URLRequest {
         return request.urlRequestValue as URLRequest
     }
     
     /// Dispatch queue that queues up and dispatches handler blocks
-    fileprivate let handlerQueue: OperationQueue
+    private let handlerQueue: OperationQueue
     
     /// Session data task that refers the lifetime of the request.
-    fileprivate var dataTask: DataTask?
+    private var dataTask: DataTask?
     
     /// Result of the service task
-    fileprivate var taskResult: ServiceTaskResult? {
+    private var taskResult: ServiceTaskResult? {
         didSet {
             // Use observer to watch for error result to send to passthrough
             guard let result = taskResult else { return }
@@ -60,15 +60,15 @@ import Foundation
     }
     
     /// Response body data
-    fileprivate var responseData: Data?
+    private var responseData: Data?
     
     /// URL response
-    fileprivate var urlResponse: URLResponse?
+    private var urlResponse: URLResponse?
     
-    fileprivate var responseError: Error?
+    private var responseError: Error?
     
     /// Type responsible for creating NSURLSessionDataTask objects
-    fileprivate var session: Session?
+    private var session: Session?
     
     /// Delegate interface for handling raw response and request events
     internal weak var passthroughDelegate: ServicePassthroughDelegate?
